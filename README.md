@@ -1,5 +1,7 @@
 # Gesture-Controlled Papa's Pizzeria
 
+Original game and spec by [meabhhenn](https://github.com/meabhhenn/HW7). This repo continues that handoff.
+
 Make pizzas with hand gestures tracked by your webcam (MediaPipe, in the
 browser). Five stations: Order → Topping → Bake → Cut → Serve. A second
 pizza can be started while one is in the oven. Full design and acceptance
