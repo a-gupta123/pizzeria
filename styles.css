@@ -1,0 +1,72 @@
+/* styles.css
+   Minimal layout for the camera feed, game canvas, and HUD.
+   Zen vibe: calm, uncluttered. Visual polish is a TODO. */
+
+:root {
+  --bg: #1b1f24;
+  --panel: #262c33;
+  --text: #e8eef2;
+  --accent: #e0a458;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  display: flex;
+  justify-content: center;
+}
+
+#app {
+  width: min(100vw, 1280px);
+  padding: 12px;
+}
+
+#hud {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.hud-panel {
+  background: var(--panel);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 14px;
+}
+
+#stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+}
+
+/* Camera is input-only; MediaPipe reads from it but we draw on the canvas. */
+#camera {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* TODO(mirror): the feed is mirrored for the player; gesture left/right is
+     corrected in code (CONFIG.MIRROR_CAMERA), not by un-mirroring here. */
+  transform: scaleX(-1);
+  opacity: 0.25; /* dimmed behind the game layer */
+}
+
+#game {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+#status {
+  margin-top: 8px;
+}

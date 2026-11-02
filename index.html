@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Gesture-Controlled Papa's Pizzeria</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <!--
+      Entry point. Layout:
+        - <video> holds the raw camera feed (hidden; used as MediaPipe input).
+        - <canvas id="game"> is where we draw the pizza, stations, and cursor.
+      The hand cursor (AC#1) is the index fingertip projected onto this canvas.
+    -->
+    <main id="app">
+      <header id="hud">
+        <!-- AC#1: click to grant camera + start tracking (reliable permission). -->
+        <button id="start" class="hud-panel" type="button">Start camera</button>
+
+        <!-- TODO(AC#2): show the order ticket here (toppings, bake time, slices). -->
+        <div id="ticket" class="hud-panel" hidden>order ticket goes here</div>
+
+        <!-- Shows current station name + hint for the active gesture. -->
+        <div id="station-label" class="hud-panel">station: —</div>
+
+        <!-- TODO(AC#13): show the customer rating after serving. -->
+        <div id="rating" class="hud-panel" hidden>rating goes here</div>
+      </header>
+
+      <div id="stage">
+        <!-- Raw camera input for MediaPipe. Hidden from view. -->
+        <video id="camera" playsinline autoplay muted></video>
+
+        <!-- Main render surface for the game. -->
+        <canvas id="game" width="1280" height="720"></canvas>
+      </div>
+
+      <!-- AC#1: status/permission banner. -->
+      <div id="status" class="hud-panel">status: not started — click "Start camera"</div>
+    </main>
+
+    <!--
+      MediaPipe Tasks Vision (hand landmarker + gesture recognizer) is loaded in
+      handTracking.js via ESM import from a CDN. See that file for the exact
+      import and model wiring. All our code is ES modules.
+    -->
+    <script type="module" src="src/game.js"></script>
+  </body>
+</html>
