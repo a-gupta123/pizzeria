@@ -9,7 +9,16 @@
 import { CONFIG, GESTURES, STATIONS, STATION_ORDER } from "./config.js";
 import { HandTracker } from "./handTracking.js";
 import { GestureDetector } from "./gestures.js";
-import { createStations, createEmptyPizza } from "./stations.js";
+import {
+  createStations,
+  createEmptyPizza,
+  formatOrderSummary,
+  pickJob,
+  needsBuildJob,
+  shouldOpenTicket,
+  advanceOven,
+  findOvenJob,
+} from "./stations.js";
 
 // Human-readable station names for the HUD (AC#4 shows the current station).
 const STATION_LABELS = {
@@ -27,15 +36,20 @@ class Game {
     this.ctx = this.canvas.getContext("2d");
     this.statusEl = document.getElementById("status");
     this.stationLabel = document.getElementById("station-label");
+    this.ticketEl = document.getElementById("ticket");
+    this.ovenEl = document.getElementById("oven");
+    this.ratingEl = document.getElementById("rating");
 
     this.tracker = new HandTracker(this.video);
     this.gestures = new GestureDetector();
     this.stations = createStations();
 
     // --- shared game state --------------------------------------------------
+    // One job is one ticket plus its pizza. A second job is added once a
+    // started pizza is in the oven, so the next order can begin while it bakes.
     this.currentStation = STATIONS.ORDER; // start at the Order station
-    this.order = null;                     // set when the order is taken (AC#2)
-    this.pizza = createEmptyPizza();       // the single in-progress pizza
+    this.jobs = [createJob()];
+    this._focus = this.jobs[0]; // the job the current station visit is showing
 
     this._lastFrameMs = 0;
     this._running = false;
@@ -71,23 +85,35 @@ class Game {
     //    rides along on the frame (GestureRecognizer); gestures.js reads it.
     const gesture = this.gestures.update(frame, frame.builtInGesture);
 
-    // 3) Station switching (AC#4/#5), gated by the hold logic in gestures.js.
+    // 3) The oven keeps baking on every station, including this one. A served
+    //    pizza is skipped so the clock stops when the rating is given.
+    for (const job of this.jobs) {
+      if (!job.rating) advanceOven(job.pizza, dt);
+    }
+
+    // 4) Station switching (AC#4/#5), gated by the hold logic in gestures.js.
     this._handleStationSwitch(gesture);
 
-    // 4) Route gestures to the active station, honoring the thumbs-up rule.
+    // 5) Route gestures to the pizza this visit is showing. Focus is chosen
+    //    when the station is entered and stays put, so pulling a pizza out or
+    //    serving it does not swap the screen to a different job mid-visit.
     const station = this.stations[this.currentStation];
-    const gameCtx = {
-      order: this.order,
-      pizza: this.pizza,
-      ctx: this.ctx,
+    const focus = this._focus;
+    const gameCtx = this._jobCtx(focus, {
       cursor: frame.cursor,
       gesture: this._routeGesture(gesture),
       dt,
-    };
+    });
 
-    // 5) Update + render.
+    // 6) Update + render.
+    // AC#2: the station assigns gameCtx.order (it starts null, so unlike the
+    // pizza it cannot be mutated in place). Copy it back onto this job.
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     station.update(gameCtx);
+    if (gameCtx.order !== focus.order) focus.order = gameCtx.order;
+    // AC#13: ServeStation assigns ctx.rating the same way.
+    if (gameCtx.rating !== focus.rating) focus.rating = gameCtx.rating;
+    this._syncHud();
     station.render(gameCtx);
     this._renderCursor(frame.cursor); // AC#1: always show where the hand is.
 
@@ -123,7 +149,7 @@ class Game {
     const next = i + delta;
     if (next < 0 || next >= STATION_ORDER.length) return; // clamp at the ends
     const target = STATION_ORDER[next];
-    this.stations[this.currentStation].onExit(this._bareCtx());
+    this.stations[this.currentStation].onExit(this._jobCtx(this._focus, {}));
     this.currentStation = target;
     this._enterStation(target);
   }
@@ -134,19 +160,104 @@ class Game {
     const name = STATION_LABELS[id] || id;
     this.stationLabel.textContent =
       `station: ${name} (${index}/${STATION_ORDER.length})`;
-    this.stations[id].onEnter(this._bareCtx());
+    // A fresh ticket before we pick a focus: the next order, or a reset after
+    // the last pizza was served. Not when walking to Topping.
+    if (shouldOpenTicket(this.jobs, id)) this.jobs.push(createJob());
+    this._focus = pickJob(this.jobs, id);
+    // Bake's onEnter is what puts the pizza in the oven. Do that first, then
+    // open the next ticket, so this visit stays on the pizza that just went in.
+    this.stations[id].onEnter(this._jobCtx(this._focus, {}));
+    if (id === STATIONS.BAKE && needsBuildJob(this.jobs)) this.jobs.push(createJob());
+    this._syncHud();
   }
 
-  /** Minimal context for enter/exit hooks (no per-frame gesture/cursor). */
-  _bareCtx() {
+  /**
+   * Context for one job. alsoBaking is true when a different pizza is in the
+   * oven, so the Order station can say the next ticket is the one to take.
+   */
+  _jobCtx(job, extras) {
+    const oven = findOvenJob(this.jobs);
     return {
-      order: this.order,
-      pizza: this.pizza,
+      order: job.order,
+      rating: job.rating,
+      pizza: job.pizza,
+      alsoBaking: !!(oven && oven !== job),
       ctx: this.ctx,
-      cursor: null,
-      gesture: this.gestures._empty(),
-      dt: 0,
+      cursor: extras.cursor ?? null,
+      gesture: extras.gesture ?? this.gestures._empty(),
+      dt: extras.dt ?? 0,
     };
+  }
+
+  /** Ticket, oven clock, and rating, from whichever jobs currently own them. */
+  _syncHud() {
+    const focus = this._focus;
+    const oven = findOvenJob(this.jobs);
+    const ticketOrder = (focus && focus.order) || null;
+    this._showTicket(ticketOrder);
+    this._showOven(oven, ticketOrder);
+    this._showRating(focus);
+  }
+
+  /**
+   * AC#2: the HUD ticket stays up after the player leaves the Order station,
+   * same place the station name is shown. It follows the pizza this visit is
+   * showing. The canvas ticket is drawn by OrderStation.
+   */
+  _showTicket(order) {
+    if (!this.ticketEl) return;
+    if (!order) {
+      this.ticketEl.hidden = true;
+      this.ticketEl.textContent = "";
+      return;
+    }
+    this.ticketEl.hidden = false;
+    this.ticketEl.textContent = formatOrderSummary(order);
+  }
+
+  /**
+   * Bake time you can read from any station. When the ticket on screen is a
+   * different order, the baking order is written out here too.
+   */
+  _showOven(oven, ticketOrder) {
+    if (!this.ovenEl) return;
+    if (!oven) {
+      this.ovenEl.hidden = true;
+      this.ovenEl.textContent = "";
+      return;
+    }
+    const elapsed = oven.pizza.bakeElapsed.toFixed(1);
+    const target = oven.order ? oven.order.bakeSeconds : null;
+    let text = target != null ? `baking ${elapsed} / ${target}s` : `baking ${elapsed}s`;
+    if (oven.order && oven.order !== ticketOrder) {
+      text += ` — ${formatOrderSummary(oven.order)}`;
+    }
+    this.ovenEl.hidden = false;
+    this.ovenEl.textContent = text;
+  }
+
+  /**
+   * AC#13: HUD copy of the star rating. The pizza on screen wins. On Serve,
+   * an unrated pizza hides the previous score so it does not look already served.
+   */
+  _showRating(focus) {
+    if (!this.ratingEl) return;
+    let rating = focus && focus.rating;
+    if (!rating && this.currentStation !== STATIONS.SERVE) {
+      for (let i = this.jobs.length - 1; i >= 0; i--) {
+        if (this.jobs[i].rating) {
+          rating = this.jobs[i].rating;
+          break;
+        }
+      }
+    }
+    if (!rating) {
+      this.ratingEl.hidden = true;
+      this.ratingEl.textContent = "";
+      return;
+    }
+    this.ratingEl.hidden = false;
+    this.ratingEl.textContent = rating.summary;
   }
 
   _renderCursor(cursor) {
@@ -166,6 +277,10 @@ class Game {
     ctx.fill();
     ctx.restore();
   }
+}
+
+function createJob() {
+  return { order: null, pizza: createEmptyPizza(), rating: null };
 }
 
 // Gate startup behind an explicit click so the browser reliably grants camera

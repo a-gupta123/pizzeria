@@ -18,13 +18,16 @@
         <!-- AC#1: click to grant camera + start tracking (reliable permission). -->
         <button id="start" class="hud-panel" type="button">Start camera</button>
 
-        <!-- TODO(AC#2): show the order ticket here (toppings, bake time, slices). -->
+        <!-- AC#2: game.js fills this once a thumbs up takes the order. -->
         <div id="ticket" class="hud-panel" hidden>order ticket goes here</div>
+
+        <!-- Oven clock, visible on every station while a pizza is baking. -->
+        <div id="oven" class="hud-panel" hidden>oven clock goes here</div>
 
         <!-- Shows current station name + hint for the active gesture. -->
         <div id="station-label" class="hud-panel">station: —</div>
 
-        <!-- TODO(AC#13): show the customer rating after serving. -->
+        <!-- AC#13: game.js fills this once a thumbs up at Serve rates the pizza. -->
         <div id="rating" class="hud-panel" hidden>rating goes here</div>
       </header>
 

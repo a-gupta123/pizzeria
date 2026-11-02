@@ -65,7 +65,12 @@ export class GestureDetector {
     state.thumbsUp = label === MP_GESTURE.THUMB_UP;
 
     // --- Thumbs left / right with hold (AC#4 switch, AC#5 ignore quick) -----
-    const dir = this._detectThumbDirection(frame); // "left" | "right" | null
+    // A sideways pinch keeps the other fingers curled and the thumb stuck out,
+    // so it can satisfy the thumbs-left/right pose and switch stations mid-drag.
+    // Skip the direction check while pinching. Passing null also resets the
+    // hold timers, so the time spent pinching cannot complete a switch the
+    // moment the fingers separate.
+    const dir = pinching ? null : this._detectThumbDirection(frame);
     state.thumbsLeftHeld = this._evaluateHold("left", dir, frame.timestamp);
     state.thumbsRightHeld = this._evaluateHold("right", dir, frame.timestamp);
 

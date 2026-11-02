@@ -1,12 +1,14 @@
 # Gesture-Controlled Papa's Pizzeria
 
 Make pizzas with hand gestures tracked by your webcam (MediaPipe, in the
-browser). One pizza at a time through five stations: Order → Topping → Bake →
-Cut → Serve. Full design and acceptance criteria (AC#n) are in
-[`SPEC.md`](./SPEC.md).
+browser). Five stations: Order → Topping → Bake → Cut → Serve. A second
+pizza can be started while one is in the oven. Full design and acceptance
+criteria (AC#n) are in [`SPEC.md`](./SPEC.md).
 
-**Status:** Hand cursor, station switching, and placing toppings work. Other
-stations have placeholder graphics and `TODO(AC#n)` markers only.
+**Status:** Every acceptance criterion in SPEC.md is implemented, including
+the stretch: the next order can start while one pizza bakes. The oven clock
+keeps running on every station. After a pizza is served, thumbs up at Order
+starts another.
 
 ## Install and run
 
@@ -25,7 +27,15 @@ Gesture: Action: Where
 Move index finger: Move cursor: Everywhere
 Hold thumbs right (~0.6s): Next station: Everywhere
 Hold thumbs left (~0.6s): Previous station: Everywhere
-Pinch / hold / release: Grab, drag, drop: Topping station
+Pinch / hold / release: Grab a topping, drag, drop on the dough: Topping station
+Pinch and drag across the dough: Add sauce along the path: Topping station
+Pinch the cheese bin, release over the dough: Cover the pizza with cheese: Topping station
+Pinch a topping on the pizza, release over the trash: Remove it: Topping station
+Pinch the glove, drag onto the pizza, release: Take the pizza out (clock stops): Bake station
+Pinch the slicer, drag across the pizza, release: One cut per drag: Cut station
+Thumbs up: Take the order (ticket shows toppings, where, bake time, slices): Order station
+Thumbs up while a pizza is baking: Take the next order. The oven clock keeps running, and the baking ticket stays on the oven readout: Order station
+Thumbs up: Serve the pizza and show a 5-star rating: Serve station
 
 Left/right are from the player's point of view (the camera is mirrored in code).
 
@@ -33,18 +43,18 @@ Left/right are from the player's point of view (the camera is mirrored in code).
 
 AC Number: Status: Notes
 #1 Cursor: Working
-#2 Order ticket: Not started: Placeholder ticket only
-#3 Thumbs up blocked at middle stations: Partial: Guard exists, but nothing uses thumbs up yet
+#2 Order ticket: Working: Thumbs up at Order fills toppings and where they go, bake time, and slices. Dashed rings on the dough repeat the placement.
+#3 Thumbs up blocked at middle stations: Working: `game.js` strips thumbs up before Topping, Bake, and Cut see it. Order takes the ticket; Serve rates the pizza.
 #4 Station switching: Working
 #5 Quick flick ignored: Working: Part of #4 
-#6 Sauce: Not started: Bin drawn, not interactive
-#7 Cheese: Not started: Bin drawn, not interactive
-#8 Place toppings: Working:Pepperoni and pepper bins only
-#9 Trash: Not started: Drawn only
-#10 Auto into oven: Not started
-#11 Glove takes pizza out: Not started: Drawn only
-#12 Cutting: Not started: Drawn only
-#13 Serve and rating: Not started: Placeholder stars only
+#6 Sauce: Working: Pinch the sauce bin, or pinch on the dough, and drag. Sauce is laid where the cursor passes over the dough. Leaving the dough breaks the stroke. A pinch that starts on a topping does not paint. Sauce is not on the ticket, so the rating does not score it.
+#7 Cheese: Working: Pinch the cheese bin and release over the dough. Cheese covers the pie inside the crust. A miss puts the handful back and does not remove cheese already there. Cheese is not on the ticket, so the rating does not score it.
+#8 Place toppings: Working: Pepperoni and pepper bins only
+#9 Trash: Working: Pinch a topping already on the pie and release it over the trash to remove it. Releasing anywhere else puts it back where it was. The closest blob wins when two overlap.
+#10 Auto into oven: Working: Entering Bake puts the pizza in. The clock keeps running after you leave, so the next pizza can be started, and coming back does not restart it. A frame longer than 0.25s only counts 0.25s, so a stall cannot skip the pull window. The HUD shows the bake time on every station. A served pizza stops the clock.
+#11 Glove takes pizza out: Working: Pinch the glove and release it on the oven mouth. A miss puts the glove back and leaves the pizza in. The clock stops on a hit. The green band is the ±1s window that scores a full bake point.
+#12 Cutting: Working: Pinch the slicer and drag across the pizza. One drag adds one line, from where the swipe enters the pie to where it leaves. A short nick on the crust does not count. The count is scored against the ticket's slice number.
+#13 Serve and rating: Working: Thumbs up at Serve scores toppings (type and position), bake time (±1s), and cut count against the ticket, then fills that many stars. Bake time is the live oven clock. The cut count is how many slicer drags crossed the pizza.
 
 ## Code map
 
@@ -61,29 +71,25 @@ AC Number: Status: Notes
 
 ## What to do next
 
-All MUST items (AC#1, #4, #8) are done. In order:
-
-1. **AC#2** order + ticket (needed for the rating)
-2. **AC#13** serve + rating (compare pizza to order)
-3. **AC#10–11** baking
-4. **AC#12** cutting
-5. **AC#7** cheese (nearly free; reuses the AC#8 code)
-6. Cut first if short on time: AC#6 sauce, AC#9 trash
+Nothing in SPEC.md is left. The stretch is in: one pizza bakes while you take and top the next order, and serving the last pizza lets thumbs up at Order start another. The oven still holds one pizza at a time.
 
 ## Known bugs
 
-- **Pinch sometimes reads as thumbs left/right**, causing an accidental station
-  switch. Likely fix: skip the thumbs check in `gestures.js` while pinching.
+- **Pinch no longer switches stations.** A sideways pinch used to satisfy the
+  thumbs-left/right pose and jump stations mid-drag. `gestures.js` now skips
+  that check while a pinch is held, and the hold timer resets so letting go
+  does not immediately switch.
 - **Thresholds are lightly tested.** Pinch and thumbs work on the author's
   webcam but aren't tuned for other hands or lighting. Adjust in `config.js`.
 
 ### Possible traps (not observed)
 
-- If tracking drops mid-drag, a topping may be placed at the last cursor
-  position.
+- If tracking drops mid-drag, a topping may be placed, cheese may be added,
+  a held topping may land in the trash, the pizza pulled from the oven, or a
+  cut committed, at the last cursor position. Sauce is painted as the cursor
+  moves, so a lost hand keeps the trail drawn so far.
 - MediaPipe uses the GPU; on machines without WebGL, switch to `"CPU"` in
   `handTracking.js`.
-- No reset between orders yet. You'll need one once serving works.
 
 ## Where corners were cut
 
